@@ -12,20 +12,66 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     try {
         $consulta = $conexion->prepare("SELECT id_usuario, correo, contrasena_hash, rol FROM usuario WHERE correo = ?");
         $consulta->execute([$correo_ingresado]);
-
         $usuario = $consulta->fetch(PDO::FETCH_ASSOC);
 
-        if ($usuario && password_verify($pass_ingresada, $usuario['contrasena_hash'])) {
+        if ($usuario) {
+            $pass_guardada = $usuario['contrasena_hash'];
+            $acceso_concedido = false;
 
-            $_SESSION['usuario_correo'] = $usuario['correo'];
-            $_SESSION['usuario_id'] = $usuario['id_usuario'];
-            // Compatibilidad: algunas páginas comprueban `id_usuario`
-            $_SESSION['id_usuario'] = $usuario['id_usuario'];
-            $_SESSION['usuario_rol'] = $usuario['rol'];
-            
-            header("Location: ../../frondend/html/index.php");//No FUNCIONA 
-            exit();
-            
+            $es_hash_seguro = (substr($pass_guardada, 0, 4) === '$2y$');
+
+            if (!$es_hash_seguro) {
+
+                if ($pass_ingresada === $pass_guardada) {
+                    $acceso_concedido = true;
+                    $nuevo_hash = password_hash($pass_ingresada, PASSWORD_DEFAULT);
+                    
+                    $update_stmt = $conexion->prepare("UPDATE usuario SET contrasena_hash = ? WHERE id_usuario = ?");
+                    $update_stmt->execute([$nuevo_hash, $usuario['id_usuario']]);
+                }
+                
+            } else {
+                
+                if (password_verify($pass_ingresada, $pass_guardada)) {
+                    $acceso_concedido = true;
+                }
+            }
+
+            if ($acceso_concedido) {
+                
+                $_SESSION['usuario_correo'] = $usuario['correo'];
+                $_SESSION['usuario_id'] = $usuario['id_usuario'];
+                $_SESSION['id_usuario'] = $usuario['id_usuario'];
+                $_SESSION['usuario_rol'] = $usuario['rol'];
+                
+                $rol_normalizado = strtolower(trim($usuario['rol']));
+
+
+                switch ($rol_normalizado) {
+                    case 'administrador':
+                    case 'admin':
+                        header("Location: ../../frondend/html/index.php");
+                        break;
+                        
+                    case 'alumno':
+                        header("Location: ../../frondend/html/panel_alumno.php");
+                        break;
+                        
+                    case 'profesor':
+                    case 'sinodal':
+                        header("Location: ../../frondend/html/panel_profesor.php");
+                        break;
+                        
+                    default:
+                        header("Location: ../../frondend/html/index.php");
+                        break;
+                }
+                exit(); 
+                
+            } else {
+                $error = "Correo o contraseña incorrecta. Intenta de nuevo.";
+            }
+
         } else {
             $error = "Correo o contraseña incorrecta. Intenta de nuevo.";
         }
@@ -35,7 +81,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
